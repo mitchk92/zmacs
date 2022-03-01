@@ -1,7 +1,16 @@
 const std = @import("std");
+const argparse = @import("ArgParse.zig");
 
 pub fn main() anyerror!void {
-    std.log.info("All your codebase are belong to us.", .{});
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+
+    const ap = [_]argparse.ArgItem{
+        .{
+            .longName = "--run-server",
+        },
+    };
+    try argparse.ArgParser(gpa.allocator(), ap[0..]);
 }
 
 test "basic test" {
