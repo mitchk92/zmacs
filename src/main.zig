@@ -1,7 +1,13 @@
 const std = @import("std");
+const Core = @import("Core.zig");
 
 pub fn main() anyerror!void {
-    std.log.info("All your codebase are belong to us.", .{});
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    var alloc = gpa.allocator();
+
+    var core = try Core.Core.init(alloc);
+    defer core.deinit();
 }
 
 test "basic test" {
