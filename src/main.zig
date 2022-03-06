@@ -1,6 +1,5 @@
 const std = @import("std");
-//const EdCore = @import("EditorCore.zig");
-const args = @import("CmdLine.zig");
+const Core = @import("Core.zig");
 
 pub fn main() anyerror!void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
