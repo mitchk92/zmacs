@@ -1,5 +1,5 @@
 const std = @import("std");
-//const zmacs = @import("zmacs.zig");
+const Display = @import("../Display.zig");
 
 pub fn getSigFd() !i32 {
     var all_mask: std.os.sigset_t = [_]u32{0} ** 32;
@@ -9,16 +9,18 @@ pub fn getSigFd() !i32 {
     return sigfd;
 }
 
-const disp = struct {
+pub const disp = struct {
     orig: std.os.termios,
     winCols: usize,
     winRows: usize,
-    pub fn getFd(_: disp) isize {
+    quit: bool,
+    pub fn getFd(_: disp) usize {
         return std.os.STDIN_FILENO;
     }
     pub fn init() !disp {
         const in_fd = std.os.STDIN_FILENO;
         const out_fd = std.os.STDOUT_FILENO;
+        std.log.info("1 ", .{});
         if (!std.os.isatty(in_fd)) {
             return error.InvalidWindow;
         }
@@ -39,16 +41,30 @@ const disp = struct {
         raw.lflag &= ~(std.os.system.ECHO | std.os.system.ICANON | std.os.system.IEXTEN | std.os.system.ISIG);
         //* control chars - set return condition: min number of bytes and timer. */
         //raw.cc[6] = 0; //* Return each byte, or zero for timeout. */ //VMIN
-        _ = try std.os.write(std.os.STDOUT_FILENO, "\x1b[?1049h");
+        std.log.info("3 ", .{});
+        _ = std.os.write(std.os.STDOUT_FILENO, "\x1b[?1049h") catch |err| {
+            std.log.err("Err{}", .{err});
+            return err;
+        };
+        std.log.info("2 ", .{});
         //* put terminal in raw mode after flushing */
         try std.os.tcsetattr(in_fd, .FLUSH, raw);
         var d = disp{
             .orig = orig,
             .winCols = 0,
             .winRows = 0,
+            .quit = false,
         };
         d.updateScreenSize();
         return d;
+    }
+    pub fn update(self_ptr: *anyopaque, _: usize) void {
+        var self = @ptrCast(*align(1) disp, self_ptr);
+        var buf: [4096]u8 = undefined;
+        const len = (std.os.read(std.os.STDIN_FILENO, buf[0..]) catch return);
+        for (buf[0..len]) |char| {
+            if (char == 'q') self.quit = true;
+        }
     }
     pub fn updateScreenSize(self: *disp) void {
         var ws: std.os.system.winsize = undefined;
@@ -99,63 +115,11 @@ const disp = struct {
         _ = std.os.write(std.os.STDOUT_FILENO, "\x1b[?1049l") catch {};
         std.os.tcsetattr(std.os.STDIN_FILENO, .FLUSH, self.orig) catch {};
     }
-};
-
-pub fn run() !void {
-    const epoll_pid = @truncate(i32, @bitCast(isize, std.os.linux.epoll_create()));
-    const sigfd = try getSigFd();
-
-    var d = try disp.init();
-    defer d.deinit();
-    var ev = std.os.linux.epoll_event{
-        .events = std.os.linux.EPOLL.IN,
-        .data = .{
-            .fd = sigfd,
-        },
-    };
-
-    try std.os.epoll_ctl(
-        epoll_pid,
-        std.os.linux.EPOLL.CTL_ADD,
-        sigfd,
-        &ev,
-    );
-    var ev2 = std.os.linux.epoll_event{
-        .events = std.os.linux.EPOLL.IN,
-        .data = .{
-            .fd = std.os.STDIN_FILENO,
-        },
-    };
-    try std.os.epoll_ctl(
-        epoll_pid,
-        std.os.linux.EPOLL.CTL_ADD,
-        std.os.STDIN_FILENO,
-        &ev2,
-    );
-
-    var epoll_events: [100]std.os.linux.epoll_event = undefined;
-    var buffer: [4096]u8 = undefined;
-    while (true) {
-        try d.drawScreen();
-        var numevs = @bitCast(isize, std.os.linux.epoll_wait(epoll_pid, epoll_events[0..], epoll_events.len, -1));
-        if (numevs < 0) {
-            continue;
-        }
-        var evs = epoll_events[0..@bitCast(usize, numevs)];
-        for (evs) |event| {
-            if (event.data.fd == std.os.STDIN_FILENO) {
-                const len = try std.os.read(std.os.STDIN_FILENO, buffer[0..]);
-                for (buffer[0..len]) |ch| {
-                    if (ch == 'q') return;
-                }
-            } else if (event.data.fd == sigfd) {
-                d.updateScreenSize();
-                _ = try std.os.read(sigfd, buffer[0..]);
-            }
-        }
+    pub fn getDisplay(self: *disp) Display.Display {
+        return .{
+            .imp = self,
+            .draw = drawScreen,
+            .handleUpdate = update,
+        };
     }
-
-    const pid = std.os.linux.getpid();
-
-    std.log.info("PID:{}", .{pid});
-}
+};
