@@ -7,8 +7,23 @@ pub const Color = struct {
 };
 
 pub const Face = struct {
+    const boldVal = [2][]const u8{ "\x1b[1m", "\x1b[22m" };
+    const italicVal = [2][]const u8{ "\x1b[3m", "\x1b[23m" };
+    const underlineVal = [2][]const u8{ "\x1b[4m", "\x1b[24m" };
+    const strikeVal = [2][]const u8{ "\x1b[9m", "\x1b[29m" };
+    const overlineVal = [2][]const u8{ "\x1b[53m", "\x1b[55m" };
     fg: Color,
     bg: Color,
+    bold: bool,
+    //\x1b[1m | 22m
+    italic: bool,
+    //\x1b]3m | 23m
+    underline: bool,
+    //\x1b[4m | 24m
+    strike: bool,
+    //\x1b[9m | 29m
+    overline: bool,
+    //\x1b[53m | 55m
 };
 
 pub const ColorSet = struct {
@@ -25,6 +40,11 @@ pub const ColorSet = struct {
     const FaceSet = struct {
         fg: []const u8,
         bg: []const u8,
+        bold: bool,
+        italic: bool,
+        underline: bool,
+        strike: bool,
+        overline: bool,
     };
     colors: std.StringArrayHashMap(Color),
     faces: std.StringArrayHashMap(FaceSet),
@@ -39,6 +59,49 @@ pub const ColorSet = struct {
         for (defaultColors) |c| {
             try self.setColor(c.name, .{ .red = c.red, .green = c.green, .blue = c.blue });
         }
+        for (defaultFaces) |face| {
+            _ = self.getColor(face.fg) orelse continue;
+            _ = self.getColor(face.bg) orelse continue;
+            try self.faces.put(face.name, .{
+                .fg = face.fg,
+                .bg = face.bg,
+                .bold = face.bold,
+                .italic = face.italic,
+                .underline = face.underline,
+                .strike = face.strike,
+                .overline = face.overline,
+            });
+        }
+        for (defaultDiffFaces) |face| {
+            var base = self.faces.get(face.baseName) orelse continue;
+            if (face.fg) |fg| {
+                base.fg = fg;
+            }
+            if (face.bg) |bg| {
+                base.bg = bg;
+            }
+            if (face.bold) |bold| {
+                base.bold = bold;
+            }
+            if (face.italic) |italic| {
+                base.italic = italic;
+            }
+            if (face.underline) |underline| {
+                base.underline = underline;
+            }
+            if (face.strike) |strike| {
+                base.strike = strike;
+            }
+            if (face.overline) |overline| {
+                base.overline = overline;
+            }
+            if (face.inverseColor) {
+                var tmpfg = base.fg;
+                base.fg = base.bg;
+                base.bg = tmpfg;
+            }
+            try self.faces.put(face.name, base);
+        }
     }
     pub fn printAllColors(self: *ColorSet) void {
         var keys = self.colors.keys();
@@ -48,6 +111,26 @@ pub const ColorSet = struct {
                 color.red,
                 color.green,
                 color.blue,
+                key,
+            });
+        }
+        var face_keys = self.faces.keys();
+        for (face_keys) |key| {
+            var face = self.faces.get(key) orelse continue;
+            var bgcolor = self.colors.get(face.bg) orelse continue;
+            var fgcolor = self.colors.get(face.fg) orelse continue;
+            std.log.info("\x1b[38;2;{};{};{}m\x1b[48;2;{};{};{}m{s}{s}{s}{s}{s}{s}\x1b[0m", .{
+                fgcolor.red,
+                fgcolor.green,
+                fgcolor.blue,
+                bgcolor.red,
+                bgcolor.green,
+                bgcolor.blue,
+                Face.boldVal[if (face.bold) 0 else 1],
+                Face.italicVal[if (face.italic) 0 else 1],
+                Face.underlineVal[if (face.underline) 0 else 1],
+                Face.strikeVal[if (face.strike) 0 else 1],
+                Face.overlineVal[if (face.overline) 0 else 1],
                 key,
             });
         }
@@ -839,4 +922,41 @@ const defaultColors = [_]ColorDef{
     .{ .red = 139, .green = 0, .blue = 0, .name = "DarkRed" },
     .{ .red = 144, .green = 238, .blue = 144, .name = "light green" },
     .{ .red = 144, .green = 238, .blue = 144, .name = "LightGreen" },
+};
+
+const FaceDef = struct {
+    name: []const u8,
+    fg: []const u8,
+    bg: []const u8,
+    bold: bool,
+    italic: bool,
+    underline: bool,
+    strike: bool,
+    overline: bool,
+};
+
+const SubFaceDef = struct {
+    name: []const u8,
+    baseName: []const u8,
+    inverseColor: bool = false,
+    fg: ?[]const u8 = null,
+    bg: ?[]const u8 = null,
+    bold: ?bool = null,
+    italic: ?bool = null,
+    underline: ?bool = null,
+    strike: ?bool = null,
+    overline: ?bool = null,
+};
+
+const defaultFaces = [_]FaceDef{
+    .{ .name = "default", .fg = "snow", .bg = "gray14", .bold = false, .italic = false, .underline = false, .strike = false, .overline = false },
+};
+
+const defaultDiffFaces = [_]SubFaceDef{
+    .{ .name = "default-bold", .baseName = "default", .bold = true },
+    .{ .name = "default-italic", .baseName = "default", .italic = true },
+    .{ .name = "default-underline", .baseName = "default", .underline = true },
+    .{ .name = "default-strike", .baseName = "default", .strike = true },
+    .{ .name = "default-overline", .baseName = "default", .overline = true },
+    .{ .name = "default-flip", .baseName = "default", .inverseColor = true },
 };
