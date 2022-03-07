@@ -1,13 +1,14 @@
 const std = @import("std");
-const Core = @import("Core.zig");
+const Manager = @import("Manager.zig");
 
 pub fn main() anyerror!void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
     var alloc = gpa.allocator();
 
-    var core = try Core.Core.init(alloc);
-    defer core.deinit();
+    var manager = try Manager.Manager.init(alloc);
+    defer manager.deinit();
+    try manager.run();
 }
 
 test "basic test" {
