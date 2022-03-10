@@ -17,8 +17,11 @@ pub const Window = struct {
 
     pub fn init(alloc: std.mem.Allocator, buffer: Buffer) !Window {
         return Window{
-            .buffer = Buffer,
+            .buffer = buffer,
             .cursorSet = CursorSet.init(alloc),
         };
+    }
+    pub fn deinit(self: *Window) void {
+        self.buffer.deinit();
     }
 };

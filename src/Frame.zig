@@ -18,13 +18,23 @@ const FrameSplit = struct {
 pub const Frame = struct {
     alloc: std.mem.Allocator,
     split: FrameDisplay,
-
+    windows: std.ArrayList(*Window),
     pub fn init(alloc: std.mem.Allocator, buff: Buffer) !Frame {
         var wind = try alloc.create(Window);
-        wind.* = Window.init(alloc, buff);
+        wind.* = try Window.init(alloc, buff);
+        var windows = std.ArrayList(*Window).init(alloc);
+        try windows.append(wind);
         return Frame{
             .alloc = alloc,
-            .split = .{ .window = Window },
+            .split = .{ .window = wind },
+            .windows = windows,
         };
+    }
+    pub fn deinit(self: Frame) void {
+        for (self.windows.items) |wind| {
+            wind.deinit();
+            self.alloc.destroy(wind);
+        }
+        self.windows.deinit();
     }
 };
