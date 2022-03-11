@@ -1,6 +1,47 @@
 const std = @import("std");
 
 pub const Regex = struct {
+    const charSet = struct {
+        const ch = union(enum) {
+            ptr: []const u8,
+            val: struct { vals: [7]u8, len: u8 },
+        };
+        chars: ch,
+        negative: bool,
+    };
+    pub fn escapedChar(str: []const u8) charSet {
+        switch (str[0]) {
+            'w' => {
+                return .{ .chars = .{ .ptr = word }, .negative = false };
+            },
+            'W' => {
+                return .{ .chars = .{ .ptr = word }, .negative = true };
+            },
+            'd' => {
+                return .{ .chars = .{ .ptr = digit }, .negative = false };
+            },
+            'D' => {
+                return .{ .chars = .{ .ptr = digit }, .negative = true };
+            },
+            's' => {
+                return .{ .chars = .{ .ptr = whitespace }, .negative = false };
+            },
+            'S' => {
+                return .{ .chars = .{ .ptr = whitespace }, .negative = true };
+            },
+            '+', '*', '?', '^', '$', '\\', '.', '[', ']', '{', '}', '(', ')', '|', '/' => |val| {
+                return .{
+                    .chars = .{ .val = .{ .vals = [7]u8{ val, 0, 0, 0, 0, 0, 0 }, .len = 1 } },
+                    .negative = false,
+                };
+            },
+            'x' => {
+                //const int = std.fmt.parseInt(u8, str[1..], 16);
+            },
+            else => unreachable,
+        }
+        unreachable;
+    }
     const word = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_";
     const digit = "0123456789";
     const whitespace = " \t\n\r";
@@ -63,6 +104,18 @@ pub const Regex = struct {
         pub fn addString(self: *Transition, str: []const u8) !void {
             try self.letters.appendSlice(str);
         }
+        pub fn addCharSet(self: *Transition, set: charSet) !void {
+            switch (set.chars) {
+                .ptr => |v| try self.addString(v),
+                .val => |v| {
+                    var count: usize = 0;
+                    while (count < v.len) : (count += 1) {
+                        try self.addChar(v.vals[count]);
+                    }
+                },
+            }
+            self.negative = set.negative;
+        }
         pub fn addChar(self: *Transition, ch: u8) !void {
             try self.letters.append(ch);
         }
@@ -105,41 +158,71 @@ pub const Regex = struct {
                     if (neg) idx += 1;
                     var chars = std.ArrayList(u8).init(alloc);
                     defer chars.deinit();
-                    var found: ?usize = null;
                     idx += 1;
-                    for (pattern[idx..]) |ch, i| {
-                        if (ch == ']') {
-                            found = i;
-                            break;
-                        } else if (ch == '-') {
-                            var begin = pattern[idx];
-                            const end = pattern[idx + i];
-                            chars.clearRetainingCapacity();
-                            while (begin < end) : (begin += 1) {
-                                try chars.append(begin);
-                            }
-                        } else {
-                            try chars.append(ch);
+
+                    outer: while (idx < pattern.len) : (idx += 1) {
+                        const prev_char = pattern[idx - 1];
+                        const cur_char = pattern[idx];
+                        const next_char = if (idx < pattern.len) pattern[idx] else return error.InvalidPattern;
+                        switch (cur_char) {
+                            '-' => {
+                                if (prev_char == '\\') {
+                                    try chars.append(cur_char);
+                                    continue :outer;
+                                }
+                                if (prev_char > next_char) return error.InvalidPattern;
+                                var ch = prev_char;
+                                while (ch <= next_char) : (ch += 1) {
+                                    try chars.append(ch);
+                                }
+                                idx += 1;
+                            },
+                            ']' => break :outer,
+                            '\\' => {
+                                const ec = escapedChar(pattern[idx + 1 ..]);
+                                switch (ec.chars) {
+                                    .ptr => |v| {
+                                        try chars.appendSlice(v);
+                                    },
+                                    .val => |v| {
+                                        var count: usize = 0;
+                                        while (count < v.len) : (count += 1) {
+                                            try chars.append(v.vals[count]);
+                                        }
+                                    },
+                                }
+                                switch (next_char) {
+                                    '[', ']', '\\' => {
+                                        try chars.append(next_char);
+                                        idx += 1;
+                                    },
+                                    else => unreachable, //TODO work all this out
+                                }
+                            },
+                            else => {
+                                if (next_char == '-') continue :outer;
+                                try chars.append(next_char);
+                            },
                         }
                     }
-                    if (found) |i| {
-                        var newState = try alloc.create(State);
-                        newState.* = State.init(alloc);
-                        try states.append(newState);
-                        var tr = try curState.addTransition(newState);
-                        for (chars.items) |ch| {
-                            try tr.addChar(ch);
-                        }
-                        tr.negative = neg;
-                        idx += i + 1;
-                        curState = newState;
+                    var newState = try alloc.create(State);
+                    newState.* = State.init(alloc);
+                    try states.append(newState);
+                    var tr = try curState.addTransition(newState);
+                    for (chars.items) |ch| {
+                        try tr.addChar(ch);
                     }
+                    tr.negative = neg;
+                    idx += 1;
+                    curState = newState;
                 },
                 '.' => {
                     var newState = try alloc.create(State);
                     newState.* = State.init(alloc);
                     try states.append(newState);
                     var tr = try curState.addTransition(newState);
+                    try tr.addChar('\n');
+                    try tr.addChar('\r');
                     tr.negative = true;
                     curState = newState;
                     idx += 1;
@@ -152,33 +235,9 @@ pub const Regex = struct {
                     newState.* = State.init(alloc);
                     try states.append(newState);
                     var tr = try curState.addTransition(newState);
-                    switch (pattern[idx + 1]) {
-                        'w' => {
-                            try tr.addString(word);
-                        },
-                        'W' => {
-                            try tr.addString(word);
-                            tr.negative = true;
-                        },
-                        'd' => {
-                            try tr.addString(digit);
-                        },
-                        'D' => {
-                            try tr.addString(digit);
-                            tr.negative = true;
-                        },
-                        's' => {
-                            try tr.addString(whitespace);
-                        },
-                        'S' => {
-                            try tr.addString(whitespace);
-                            tr.negative = true;
-                        },
-                        else => {
-                            std.log.err("Found {c}", .{pattern[idx + 1]});
-                            return error.Unimplemented;
-                        },
-                    }
+                    const ec = escapedChar(pattern[idx + 1 ..]);
+                    try tr.addCharSet(ec);
+                    std.log.err("addChar [{}]", .{ec});
                     curState = newState;
                     idx += 2;
                 },
@@ -266,6 +325,7 @@ pub const Regex = struct {
 
 const TestMap = struct {
     pattern: []const u8,
+    printPattern: bool = false,
     texts: []const TestText,
 };
 
@@ -332,9 +392,34 @@ test {
                     },
                 },
                 .{
-                    .text = "Hallo",
+                    .text = "Hallo Hbllo",
                     .expectedResult = &.{
                         .{ .start = 0, .end = 5 },
+                    },
+                },
+                .{
+                    .text = "Hallo Hello",
+                    .expectedResult = &.{
+                        .{ .start = 0, .end = 5 },
+                        .{ .start = 6, .end = 11 },
+                    },
+                },
+            },
+        },
+        .{
+            .pattern = "H[\\w\\W]llo",
+            .texts = &.{
+                .{
+                    .text = "Hello",
+                    .expectedResult = &.{
+                        .{ .start = 0, .end = 5 },
+                    },
+                },
+                .{
+                    .text = "Hallo Hbllo",
+                    .expectedResult = &.{
+                        .{ .start = 0, .end = 5 },
+                        .{ .start = 6, .end = 11 },
                     },
                 },
                 .{
@@ -396,6 +481,7 @@ test {
         },
         .{
             .pattern = "H\\Wllo",
+            .printPattern = true,
             .texts = &.{
                 .{
                     .text = "H(llo",
@@ -424,12 +510,14 @@ test {
             std.log.err("Pattern: {s}", .{tc.pattern});
         }
         var reg = try Regex.init(alloc, tc.pattern);
-        //var output = std.ArrayList(u8).init(alloc);
-        //defer output.deinit();
-        //var writer = output.writer();
-        //try reg.printState(writer);
-        //std.log.err("{s} => {s}", .{ tc.pattern, output.items });
         defer reg.deinit();
+        if (tc.printPattern) {
+            var output = std.ArrayList(u8).init(alloc);
+            defer output.deinit();
+            var writer = output.writer();
+            try reg.printState(writer);
+            std.log.err("{s} => {s}", .{ tc.pattern, output.items });
+        }
         for (tc.texts) |text| {
             errdefer std.log.err("Text:{s}", .{text.text});
             var res = try reg.exec(alloc, text.text);
