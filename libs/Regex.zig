@@ -75,30 +75,71 @@ pub const Regex = struct {
         }
     };
     const Transition = struct {
-        letters: std.ArrayList(u8),
+        const Nextstate = u32;
+        const ClassType = enum {
+            Whitespace,
+            Digit,
+            Word,
+        };
+        const charType = struct {
+            chars: u8[23],
+            len: u8,
+        };
+        const rangeType = struct {
+            //both inclusive
+            low: u8,
+            upper: u8,
+        };
+
+        const txType = union(enum) {
+            chars: [24]u8,
+            class: ClassType,
+            range: rangeType,
+        };
+        txt: txType,
         negative: bool,
-        nextState: *State,
-        pub fn init(alloc: std.mem.Allocator, nextState: *State) Transition {
+        nextState: NextState,
+        pub fn initClass(nextState: NextState, classType: ClassType, negative: bool) Transition {
+            return .{
+                .txt = .{ .class = classType },
+                .negative = negative,
+                .nextSate = nextState,
+            };
+        }
+        pub fn initOld(alloc: std.mem.Allocator, nextState: *State) Transition {
             return .{
                 .letters = std.ArrayList(u8).init(alloc),
                 .negative = false,
                 .nextState = nextState,
             };
         }
-        pub fn checkTransition(self: Transition, ch: u8) ?*State {
-            for (self.letters.items) |letter| {
-                if (letter == ch) {
-                    if (self.negative) {
-                        return null;
-                    } else {
-                        return self.nextState;
+        pub fn checkTransition(self: Transition, char: u8) ?*State {
+            var match = false;
+            switch (self.txt) {
+                .chars => |ch| {
+                    for (ch.chars[0..ch.len]) |val| {
+                        if (val == char) {
+                            match = true;
+                            break;
+                        }
                     }
-                }
+                },
+                .class => |class| {
+                    const chars = switch (class) {
+                        .Whitespace => whitespace,
+                        .Digit => digit,
+                        .Word => word,
+                    };
+                    for (chars) |val| {
+                        if (val == char) match = true;
+                        break;
+                    }
+                },
             }
-            if (self.negative) {
-                return self.nextState;
+            if (match) {
+                return !self.negative;
             } else {
-                return null;
+                return self.negative;
             }
         }
         pub fn addString(self: *Transition, str: []const u8) !void {
@@ -149,7 +190,7 @@ pub const Regex = struct {
                     newState.* = State.init(alloc);
                     try states.append(newState);
                     var tr = try curState.addTransition(newState);
-                    try tr.addChar(p);
+                    try tr.addChar(p); //stays
                     curState = newState;
                     idx += 1;
                 },
@@ -209,9 +250,9 @@ pub const Regex = struct {
                     newState.* = State.init(alloc);
                     try states.append(newState);
                     var tr = try curState.addTransition(newState);
-                    for (chars.items) |ch| {
-                        try tr.addChar(ch);
-                    }
+                    //for (chars.items) |ch| {
+                    //try tr.addChar(ch); // TODO should be a range
+                    //}
                     tr.negative = neg;
                     idx += 1;
                     curState = newState;
