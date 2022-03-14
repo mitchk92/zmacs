@@ -15,7 +15,7 @@ pub fn main() anyerror!void {
             std.log.info("{s}", .{nxt});
         }
     }
-    if (serverMode) Server.runServer();
+    if (serverMode) try Server.runServer(alloc);
     std.log.info("All your codebase are belong to us.", .{});
 }
 
