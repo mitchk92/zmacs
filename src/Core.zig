@@ -35,6 +35,10 @@ pub const Core = struct {
             .data = bytes,
         };
     }
+    pub fn redraw(self: Core) bool {
+        _ = self;
+        return true;
+    }
     alloc: std.mem.Allocator,
     frames: std.ArrayList(Frame.Frame),
     dir: std.fs.Dir,
