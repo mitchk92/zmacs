@@ -11,6 +11,7 @@ pub const Core = struct {
             .alloc = alloc,
             .frames = std.ArrayList(Frame.Frame).init(alloc),
             .dir = std.fs.cwd(),
+            .colors = Color.ColorSet.init(alloc),
         };
 
         var buf = try core.openFile("build.zig");
@@ -35,13 +36,14 @@ pub const Core = struct {
             .data = bytes,
         };
     }
-    pub fn redraw(self: Core) bool {
-        _ = self;
-        return true;
+    pub fn redraw(self: *Core) !?Display.DrawCommand {
+        var cmd = Display.DrawCommand.init(self.alloc);
+        try cmd.title.append("Test Name", self.colors.getFace("default-bold") orelse self.colors.placeHoldFace());
+        return cmd;
     }
     alloc: std.mem.Allocator,
     frames: std.ArrayList(Frame.Frame),
     dir: std.fs.Dir,
-    //colors: Color.ColorSet,
 
+    colors: Color.ColorSet,
 };

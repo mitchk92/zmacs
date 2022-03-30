@@ -7,11 +7,11 @@ pub const Color = struct {
 };
 
 pub const Face = struct {
-    const boldVal = [2][]const u8{ "\x1b[1m", "\x1b[22m" };
-    const italicVal = [2][]const u8{ "\x1b[3m", "\x1b[23m" };
-    const underlineVal = [2][]const u8{ "\x1b[4m", "\x1b[24m" };
-    const strikeVal = [2][]const u8{ "\x1b[9m", "\x1b[29m" };
-    const overlineVal = [2][]const u8{ "\x1b[53m", "\x1b[55m" };
+    pub const boldVal = [2][]const u8{ "\x1b[1m", "\x1b[22m" };
+    pub const italicVal = [2][]const u8{ "\x1b[3m", "\x1b[23m" };
+    pub const underlineVal = [2][]const u8{ "\x1b[4m", "\x1b[24m" };
+    pub const strikeVal = [2][]const u8{ "\x1b[9m", "\x1b[29m" };
+    pub const overlineVal = [2][]const u8{ "\x1b[53m", "\x1b[55m" };
     fg: Color,
     bg: Color,
     bold: bool,
@@ -158,6 +158,22 @@ pub const ColorSet = struct {
         return Face{
             .fg = fg,
             .bg = bg,
+            .bold = faceSet.bold,
+            .italic = faceSet.italic,
+            .underline = faceSet.underline,
+            .strike = faceSet.strike,
+            .overline = faceSet.overline,
+        };
+    }
+    pub fn placeHoldFace(_: *ColorSet) Face {
+        return .{
+            .fg = .{ .red = 0, .green = 0, .blue = 255 },
+            .bg = .{ .red = 255, .green = 0, .blue = 0 },
+            .bold = false,
+            .italic = false,
+            .underline = false,
+            .strike = true,
+            .overline = false,
         };
     }
 };

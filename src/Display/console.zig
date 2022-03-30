@@ -2,10 +2,11 @@ const std = @import("std");
 const Display = @import("../Display.zig");
 const Manager = @import("../Manager.zig");
 const Core = @import("../Core.zig").Core;
+const Util = @import("../util.zig");
+const Color = @import("../Color.zig");
 pub const disp = struct {
     orig: std.os.termios,
-    winCols: usize,
-    winRows: usize,
+    size: Util.Pos,
     quit: bool,
     core: *Core,
     pub fn getFd(self: *disp) [2]Manager.Manager.oseventListener {
@@ -55,8 +56,7 @@ pub const disp = struct {
         try std.os.tcsetattr(in_fd, .FLUSH, raw);
         var d = disp{
             .orig = orig,
-            .winCols = 0,
-            .winRows = 0,
+            .size = .{ .row = 0, .col = 0 },
             .quit = false,
             .core = core,
         };
@@ -83,11 +83,65 @@ pub const disp = struct {
             std.os.system.T.IOCGWINSZ,
             @ptrToInt(&ws),
         ) == 0) {
-            self.winCols = ws.ws_col;
-            self.winRows = ws.ws_row;
+            self.size = .{
+                .row = ws.ws_row,
+                .col = ws.ws_col,
+            };
         } else {
             @panic("Don't know how to do without ioctl for winsize");
         }
+    }
+
+    pub fn drawScreenCmd(self: disp, cmds: *const Display.DrawCommand) !void {
+        var writer = std.io.getStdOut().writer();
+        var drawBuffer = std.ArrayList(std.ArrayList(u8)).init(self.core.alloc);
+        defer {
+            for (drawBuffer.items) |item| {
+                item.deinit();
+            }
+            drawBuffer.deinit();
+        }
+        var arena = std.heap.ArenaAllocator.init(self.core.alloc);
+        defer arena.deinit();
+        var arenaAlloc = arena.allocator();
+        //const framePos = .{ .pos = .{ .row = 1, .col = 0 }, .size = .{ .row = self.size.row - 2, .col = self.size.col - 2 } };
+        var lineBuffer = std.ArrayList(u8).init(self.core.alloc);
+        _ = try formatString(cmds.title, &lineBuffer, arenaAlloc);
+        try drawBuffer.append(lineBuffer);
+        lineBuffer.clearRetainingCapacity();
+        _ = try std.os.write(std.os.STDOUT_FILENO, "\x1b[?25l\x1b[H\x1b[2J"); // hide cursor \x1b[?25l,go to base \x1b[H
+        for (drawBuffer.items) |line| {
+            _ = try std.os.write(std.os.STDOUT_FILENO, line.items);
+            _ = try std.os.write(std.os.STDOUT_FILENO, "\r\n");
+        }
+
+        try std.fmt.format(writer, "\x1b[{};{}H", .{ cmds.cursor.pos.row, cmds.cursor.pos.col });
+        _ = try std.os.write(std.os.STDOUT_FILENO, "\x1b[?25h");
+    }
+
+    fn formatString(string: Display.DisplayString, buffer: *std.ArrayList(u8), alloc: std.mem.Allocator) !usize {
+        var numPrint: usize = 0;
+        for (string.tokens.items) |token| {
+            var print = std.ArrayList(u8).init(alloc);
+            defer print.deinit();
+            try std.fmt.format(print.writer(), "{s}", .{std.fmt.fmtSliceEscapeUpper(token.str.items)});
+            numPrint += print.items.len;
+            try std.fmt.format(buffer.writer(), "\x1b[38;2;{};{};{}m\x1b[48;2;{};{};{}m{s}{s}{s}{s}{s}{s}\x1b[0m", .{
+                token.face.fg.red,
+                token.face.fg.green,
+                token.face.fg.blue,
+                token.face.bg.red,
+                token.face.bg.green,
+                token.face.bg.blue,
+                Color.Face.boldVal[if (token.face.bold) 0 else 1],
+                Color.Face.italicVal[if (token.face.italic) 0 else 1],
+                Color.Face.underlineVal[if (token.face.underline) 0 else 1],
+                Color.Face.strikeVal[if (token.face.strike) 0 else 1],
+                Color.Face.overlineVal[if (token.face.overline) 0 else 1],
+                print.items,
+            });
+        }
+        return numPrint;
     }
     pub fn drawScreen(self: disp) !void {
         _ = self;
@@ -103,7 +157,7 @@ pub const disp = struct {
         //const allocator = fba.allocator();
         var row: usize = 1;
         var lineNum: usize = 0;
-        while (row < self.winRows - 1) : (row += 1) {
+        while (row < self.size.row - 1) : (row += 1) {
             defer lineNum += 1;
             //var col: usize = 0;
             if (lineNum < buffer.lines.items.len) {
@@ -114,7 +168,7 @@ pub const disp = struct {
             }
             //stdoutWriter.writeN
 
-            if (row + 2 != self.winRows) {
+            if (row + 2 != self.size.row) {
                 _ = try stdoutWriter.write("\r\n");
             }
         }
