@@ -61,7 +61,10 @@ pub const Manager = struct {
     pub fn run(self: *Manager) !void {
         var epoll_events: [10]std.os.linux.epoll_event = undefined;
         while (true) {
-            try self.disp.drawScreen();
+            if (try self.core.redraw()) |*redraw_command| {
+                try self.disp.drawScreenCmd(redraw_command);
+                redraw_command.deinit();
+            }
             if (self.disp.quit) {
                 return;
             }
@@ -76,9 +79,6 @@ pub const Manager = struct {
                         item.action(item.ctx, item.fd);
                     }
                 }
-            }
-            if (self.core.redraw()) |redraw_command| {
-                self.disp.draw(redraw_command);
             }
         }
     }
