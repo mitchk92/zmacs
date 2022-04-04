@@ -40,6 +40,7 @@ fn listDirFunc(ctx: Context, args: ArgList, input: Arg) CmdFuncError![]Arg {
     _ = input;
     return CmdFuncError.FatalError;
 }
+
 fn listDirFuncSub(ctx: Context, args: ArgList, input: []const u8) !std.ArrayList([]u8) {
     _ = args;
     const filesOnly = true;
