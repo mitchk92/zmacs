@@ -1,6 +1,4 @@
 const Frame = @import("Frame.zig");
-const Color = @import("Color.zig").Face;
-const Core = @import("Core.zig").Core;
 fn setColor(writer: anytype, face: Face) !void {
     try std.fmt.format(writer, "\x1b[38;2;{};{};{}m\x1b[48;2;{};{};{}m", .{
         face.fg.red,
@@ -13,11 +11,11 @@ fn setColor(writer: anytype, face: Face) !void {
 }
 
 pub const TerminalDisplay = struct {
-    core: *Core,
+    colors: *Color.ColorSet,
     orig: std.os.termios,
     winCols: usize,
     winRows: usize,
-    pub fn init(core: *Core) TerminalDisplay {
+    pub fn init(colors: *Color.ColorSet) TerminalDisplay {
         const in_fd = std.os.STDIN_FILENO;
         const out_fd = std.os.STDOUT_FILENO;
         if (!std.os.isatty(in_fd)) {
@@ -44,6 +42,7 @@ pub const TerminalDisplay = struct {
         //* put terminal in raw mode after flushing */
         try std.os.tcsetattr(in_fd, .FLUSH, raw);
         var d = TerminalDisplay{
+            .colors = colors,
             .orig = orig,
             .winCols = 0,
             .winRows = 0,
@@ -66,6 +65,7 @@ pub const TerminalDisplay = struct {
     }
     pub fn draw(
         self: *TerminalDisplay,
+        commands: DisplayScreen,
     ) void {
         _ = try std.os.write(std.os.STDOUT_FILENO, "\x1b[?25l\x1b[H"); // hide cursor \x1b[?25l,go to base \x1b[H
 
@@ -75,25 +75,8 @@ pub const TerminalDisplay = struct {
 
         const allocator = fba.allocator();
         var row: usize = 0;
-        while (row < self.winRows) : (row += 1) {
-            var arr = std.ArrayList(u8).init(allocator);
-            var lineWriter = arr.writer();
-            if (row == 0) {
-                try lineWriter.writeByteNTimes('#', self.winCols);
-                _ = try lineWriter.write("\r\n");
-            } else if (row == self.winRows - 1) {
-                try lineWriter.writeByteNTimes('#', self.winCols);
-            } else {
-                var col: usize = 0;
 
-                try std.fmt.format(lineWriter, "{:3}", .{row});
-
-                _ = try lineWriter.write("\r\n");
-                while (col < self.winCols - 1) : (col += 1) {}
-            }
-            _ = try stdoutWriter.write(arr.items);
-        }
-        _ = try std.os.write(std.os.STDOUT_FILENO, "\x1b[?25h");
+        _ = try std.os.write(std.os.STDOUT_FILENO, "\x1b[?25h"); //show cursor
         //std.f
     }
     fn drawMenuLine(self: *TerminalDisplay, writer: anytype) usize {

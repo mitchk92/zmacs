@@ -9,43 +9,6 @@ pub const Display = struct {
     handleUpdate: fn (core: *Core, imp: *anyopaque) Errors.UpdateError!void,
 };
 
-pub const DisplayToken = struct {
-    str: std.ArrayList(u8),
-    face: Color.Face,
-    pub fn create(alloc: std.mem.Allocator, str: []const u8, face: Color.Face) !DisplayToken {
-        var stringArray = std.ArrayList(u8).init(alloc);
-        try stringArray.appendSlice(str);
-        return DisplayToken{
-            .str = stringArray,
-            .face = face,
-        };
-    }
-    pub fn deinit(self: *DisplayToken) void {
-        self.str.deinit();
-    }
-};
-
-pub const DisplayString = struct {
-    alloc: std.mem.Allocator,
-    tokens: std.ArrayList(DisplayToken),
-    pub fn createEmpty(alloc: std.mem.Allocator) DisplayString {
-        return .{
-            .alloc = alloc,
-            .tokens = std.ArrayList(DisplayToken).init(alloc),
-        };
-    }
-    pub fn append(self: *DisplayString, text: []const u8, face: Color.Face) !void {
-        var token = try DisplayToken.create(self.alloc, text, face);
-        try self.tokens.append(token);
-    }
-    pub fn deinit(self: *DisplayString) void {
-        for (self.tokens.items) |*i| {
-            i.deinit();
-        }
-        self.tokens.deinit();
-    }
-};
-
 pub const DisplayWindow = struct {
     lines: std.ArrayList(DisplayString),
     modeLine: DisplayString,
@@ -106,4 +69,19 @@ pub const DrawCommand = struct {
         self.windows.deinit();
         self.frames.deinit();
     }
+};
+
+pub const LinePos = struct {
+    line: usize,
+    col: usize,
+};
+
+pub const MenuItem = struct {};
+
+pub const DisplayScreen = struct {
+    title: DisplayString,
+    menuBar: std.ArrayList(DisplayString),
+    windows: std.ArrayList(DisplayWindow),
+    splits: std.ArrayList(DisplaySplit),
+    topLevelSplit: usize,
 };
